@@ -1,0 +1,15 @@
+{
+  "name": "portuguese-vocabulary-web",
+  "version": "1.0.0",
+  "description": "Bayesian adaptive Portuguese vocabulary estimator with live knowledge curve",
+  "scripts": {
+    "start": "npx http-server -p 8080",
+    "preprocess": "node data/preprocess.js"
+  },
+  "keywords": ["portuguese", "vocabulary", "bayesian", "language-learning"],
+  "author": "Stephen Brown",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
