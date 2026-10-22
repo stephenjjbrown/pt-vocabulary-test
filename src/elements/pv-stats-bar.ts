@@ -2,8 +2,8 @@
  * The three stat tiles: questions answered, estimated vocabulary, and the
  * 95% credible interval.
  *
- * Reads the model, calls no controller. On connect it subscribes to the
- * signals it renders; on disconnect those subscriptions are dropped.
+ * Reads the model. On connect it subscribes to the signals it renders and
+ * disposes those subscriptions on disconnect.
  */
 
 import { html } from 'lit';

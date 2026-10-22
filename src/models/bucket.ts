@@ -1,13 +1,11 @@
 /**
  * Tally of answers for one frequency bucket.
  *
- * Per AGENTS.md the model exposes only state and readonly getters. The one
- * method on the class — `clone()` — exists because signal subscribers don't
- * fire when an item in an array mutates in place. The controller calls
- * `clone()` when it needs to publish a new array; views and stats read the
- * fields directly. The exception for `clone()` is a deliberate departure
- * from the strict reading, approved at design time.
+ * Owns its own bookkeeping: callers hand it a response and it updates the
+ * right counter.
  */
+
+import type { BucketDef } from '../config.ts';
 
 export class Bucket {
     yesCount = 0;
@@ -26,14 +24,36 @@ export class Bucket {
         return this.yesCount + 0.5 * this.maybeCount;
     }
 
-    /** Structural copy, used to give signal subscribers a new reference. */
-    clone(): Bucket {
-        const b = new Bucket();
-        b.yesCount = this.yesCount;
-        b.maybeCount = this.maybeCount;
-        b.noCount = this.noCount;
-        b.skippedCount = this.skippedCount;
-        b.asked = this.asked;
-        return b;
+    /**
+     * Record one response.
+     *   response: 1.0 = yes, 0.5 = maybe, 0.0 = no, null = skip
+     *
+     * A skip bumps `skippedCount` only: it is not an answer, so it does not
+     * affect `sampleSize`, `totalScore` or `asked`.
+     */
+    record(response: number | null): void {
+        if (response === null) {
+            this.skippedCount += 1;
+            return;
+        }
+
+        if (response === 1.0) this.yesCount += 1;
+        else if (response === 0.0) this.noCount += 1;
+        else if (response === 0.5) this.maybeCount += 1;
+
+        this.asked += 1;
     }
+
+    reset(): void {
+        this.yesCount = 0;
+        this.maybeCount = 0;
+        this.noCount = 0;
+        this.skippedCount = 0;
+        this.asked = 0;
+    }
+}
+
+/** A fresh set of empty buckets, one per frequency band. */
+export function emptyBuckets(defs: ReadonlyArray<BucketDef>): Bucket[] {
+    return defs.map(() => new Bucket());
 }

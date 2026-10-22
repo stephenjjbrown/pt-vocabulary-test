@@ -9,7 +9,6 @@ import { customElement } from 'lit/decorators.js';
 import { app } from '../models/app.ts';
 import { BUCKETS } from '../config.ts';
 import { bucketPointEstimate, bucketCredibleInterval, vocabEstimate, vocabCredibleInterval } from '../stats.ts';
-import { reset } from '../controllers/app-controller.ts';
 import { LightElement } from './base.ts';
 
 @customElement('pv-results')
@@ -70,7 +69,7 @@ export class PvResults extends LightElement {
                     </div>
                 </div>
 
-                <button class="btn btn-primary" @click=${reset}>🔄 Take Test Again</button>
+                <button class="btn btn-primary" @click=${() => app.reset()}>🔄 Take Test Again</button>
             </div>
         `;
     }

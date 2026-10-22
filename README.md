@@ -66,17 +66,19 @@ Open <http://localhost:5173>.
 
 ## Architecture
 
-The project follows a Flux-like single-direction flow, described in
-[`AGENTS.md`](./AGENTS.md):
+Three layers, with state and the operations on it living together:
 
-- **`src/models/`** — plain classes holding state. `App` is a singleton of
-  signals; `Bucket` and `Word` hold only fields and read-only getters. No
-  methods that mutate, no DOM.
-- **`src/controllers/`** — stateless functions. They mutate the models and
-  nothing else. Views call them; views never write to a model directly.
-- **`src/elements/`** — Lit components. Shadow DOM is disabled so the global
-  stylesheet applies. Each element subscribes to the signals it renders in
-  `connectedCallback` and disposes those subscriptions in
+- **`src/data/`** — the data-access layer. `fetchWords()` talks to
+  `GET /api/words` and returns plain word data. Models never do I/O.
+- **`src/models/`** — the application state, and the methods that change it.
+  `App` is a singleton holding signals for the corpus, the tallies, the
+  history and the current word, and exposing `begin()`, `answer()`, `reset()`.
+  `Bucket` and `Word` are its constituents; `Bucket.record()` owns the rules
+  for how a response changes a tally.
+- **`src/elements/`** — Lit components. They read the model's signals and call
+  methods on it; they never mutate state themselves. Shadow DOM is disabled so
+  the global stylesheet applies. Each element subscribes to the signals it
+  renders in `connectedCallback` and disposes those subscriptions in
   `disconnectedCallback`.
 
 Reactivity uses `@preact/signals-core`. A model change notifies only the

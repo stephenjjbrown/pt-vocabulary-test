@@ -2,15 +2,13 @@
  * The application shell: owns the layout and switches between the loading,
  * question and results views based on the model's phase.
  *
- * This element holds no model or controller instances — it reads the
- * singleton and calls controller functions, like every other view.
+ * Reads the app singleton and calls methods on it, like every other view.
  */
 
 import { html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 
 import { app } from '../models/app.ts';
-import { reset } from '../controllers/app-controller.ts';
 import { LightElement } from './base.ts';
 
 import './pv-stats-bar.ts';
@@ -49,7 +47,7 @@ export class PvApp extends LightElement {
                             <pv-question-card></pv-question-card>
                             <pv-history></pv-history>
                             <div class="controls">
-                                <button class="btn btn-reset" @click=${reset}>↺ Start Over</button>
+                                <button class="btn btn-reset" @click=${() => app.reset()}>↺ Start Over</button>
                             </div>
                         </div>
                     </div>

@@ -19,31 +19,21 @@ export interface Interval {
     high: number;
 }
 
-/** n in the bucket: number of answered (non-skipped) questions. */
-export function bucketSampleSize(b: Bucket): number {
-    return b.yesCount + b.maybeCount + b.noCount;
-}
-
-/** Half-weighted count: how many "yes-equivalents" we have. */
-export function bucketTotalScore(b: Bucket): number {
-    return b.yesCount + 0.5 * b.maybeCount;
-}
-
 /**
  * Point estimate p̂ of fraction known. 0 when nothing's been answered --
  * we have no data, so we don't claim to know anything.
  */
 export function bucketPointEstimate(b: Bucket): number {
-    const n = bucketSampleSize(b);
-    return n === 0 ? 0 : bucketTotalScore(b) / n;
+    const n = b.sampleSize;
+    return n === 0 ? 0 : b.totalScore / n;
 }
 
 /** Wilson 95% CI. Empty bucket -> [0, 1] (total uncertainty). */
 export function bucketCredibleInterval(b: Bucket): Interval {
-    const n = bucketSampleSize(b);
+    const n = b.sampleSize;
     if (n === 0) return { low: 0, high: 1 };
 
-    const k = bucketTotalScore(b);
+    const k = b.totalScore;
     // Wilson requires integer k. Round half-credits.
     const { left, right } = WilsonScore.interval(Math.round(k), n);
 
