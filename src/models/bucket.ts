@@ -6,6 +6,7 @@
  */
 
 import type { BucketDef } from '../config.ts';
+import { ResponseType } from './response-type.ts';
 
 export class Bucket {
     yesCount = 0;
@@ -26,22 +27,28 @@ export class Bucket {
 
     /**
      * Record one response.
-     *   response: 1.0 = yes, 0.5 = maybe, 0.0 = no, null = skip
      *
-     * A skip bumps `skippedCount` only: it is not an answer, so it does not
-     * affect `sampleSize`, `totalScore` or `asked`.
+     * `Active` and `Passive` are answers and count toward `asked`; `NotKnown`
+     * is an answer too. `Skipped` is not, so it only bumps `skippedCount`.
      */
-    record(response: number | null): void {
-        if (response === null) {
-            this.skippedCount += 1;
-            return;
+    record(response: ResponseType): void {
+        switch (response) {
+            case ResponseType.Active:
+                this.yesCount += 1;
+                this.asked += 1;
+                break;
+            case ResponseType.Passive:
+                this.maybeCount += 1;
+                this.asked += 1;
+                break;
+            case ResponseType.NotKnown:
+                this.noCount += 1;
+                this.asked += 1;
+                break;
+            case ResponseType.Skipped:
+                this.skippedCount += 1;
+                break;
         }
-
-        if (response === 1.0) this.yesCount += 1;
-        else if (response === 0.0) this.noCount += 1;
-        else if (response === 0.5) this.maybeCount += 1;
-
-        this.asked += 1;
     }
 
     reset(): void {

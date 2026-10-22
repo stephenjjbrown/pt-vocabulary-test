@@ -10,6 +10,7 @@ import { html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 
 import { app } from '../models/app.ts';
+import { ResponseType } from '../models/response-type.ts';
 import { BUCKETS } from '../config.ts';
 import { LightElement } from './base.ts';
 
@@ -38,12 +39,12 @@ export class PvQuestionCard extends LightElement {
                 </div>
                 <p class="question-prompt">Do you know this word?</p>
                 <div class="button-row">
-                    <button class="btn btn-yes" @click=${() => app.answer(1.0)}>Yes</button>
-                    <button class="btn btn-maybe" @click=${() => app.answer(0.5)}>Maybe (0.5)</button>
-                    <button class="btn btn-no" @click=${() => app.answer(0.0)}>No</button>
+                    <button class="btn btn-yes" @click=${() => app.answer(ResponseType.Active)}>Yes</button>
+                    <button class="btn btn-maybe" @click=${() => app.answer(ResponseType.Passive)}>Maybe (0.5)</button>
+                    <button class="btn btn-no" @click=${() => app.answer(ResponseType.NotKnown)}>No</button>
                 </div>
                 <div class="button-row secondary">
-                    <button class="btn btn-skip" @click=${() => app.answer(null)}>Skip</button>
+                    <button class="btn btn-skip" @click=${() => app.answer(ResponseType.Skipped)}>Skip</button>
                 </div>
             </div>
         `;

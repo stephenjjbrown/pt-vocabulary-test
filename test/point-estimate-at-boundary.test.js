@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Bucket } from '../src/models/bucket.ts';
+import { ResponseType } from '../src/models/response-type.ts';
 import {
     bucketPointEstimate,
     bucketCredibleInterval,
@@ -74,11 +75,11 @@ test('Bucket size (width) does not affect the point estimate or CI', () => {
     assert.equal(ciA.high, ciB.high);
 });
 
-test('Bucket.record(): yes / maybe / no increment the right counter and asked', () => {
+test('Bucket.record(): Active / Passive / NotKnown increment the right counter and asked', () => {
     const b = new Bucket();
-    b.record(1.0);
-    b.record(0.5);
-    b.record(0.0);
+    b.record(ResponseType.Active);
+    b.record(ResponseType.Passive);
+    b.record(ResponseType.NotKnown);
 
     assert.equal(b.yesCount, 1);
     assert.equal(b.maybeCount, 1);
@@ -88,10 +89,10 @@ test('Bucket.record(): yes / maybe / no increment the right counter and asked', 
     assert.equal(b.totalScore, 1.5);
 });
 
-test('Bucket.record(null): a skip counts separately and is not an answer', () => {
+test('Bucket.record(Skipped): a skip counts separately and is not an answer', () => {
     const b = new Bucket();
-    b.record(1.0);
-    b.record(null);
+    b.record(ResponseType.Active);
+    b.record(ResponseType.Skipped);
 
     assert.equal(b.skippedCount, 1);
     assert.equal(b.asked, 1, 'skip must not increment asked');

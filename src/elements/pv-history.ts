@@ -9,6 +9,7 @@ import { html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 
 import { app } from '../models/app.ts';
+import { ResponseType } from '../models/response-type.ts';
 import { LightElement } from './base.ts';
 
 /** Cap the rendered list so a long session can't grow the DOM unbounded. */
@@ -24,12 +25,14 @@ export class PvHistory extends LightElement {
         });
     }
 
-    private static labelFor(response: number | null): { badge: string; label: string } {
-        if (response === 1.0) return { badge: 'badge-yes', label: 'Yes' };
-        if (response === 0.5) return { badge: 'badge-maybe', label: 'Maybe' };
-        if (response === 0.0) return { badge: 'badge-no', label: 'No' };
-        return { badge: 'badge-skip', label: 'Skip' };
-    }
+    /** Display for each response. Typed as a full record, so adding a
+     *  ResponseType member is a compile error until it is given a label. */
+    private static readonly LABELS: Record<ResponseType, { badge: string; label: string }> = {
+        [ResponseType.Active]: { badge: 'badge-yes', label: 'Yes' },
+        [ResponseType.Passive]: { badge: 'badge-maybe', label: 'Maybe' },
+        [ResponseType.NotKnown]: { badge: 'badge-no', label: 'No' },
+        [ResponseType.Skipped]: { badge: 'badge-skip', label: 'Skip' },
+    };
 
     override render() {
         const entries = app.history.value.slice(0, MAX_VISIBLE);
@@ -39,7 +42,7 @@ export class PvHistory extends LightElement {
                 <h3>Recent Answers</h3>
                 <div class="history-list">
                     ${entries.map((e) => {
-                        const { badge, label } = PvHistory.labelFor(e.response);
+                        const { badge, label } = PvHistory.LABELS[e.response];
                         return html`
                             <div class="history-item">
                                 <span>

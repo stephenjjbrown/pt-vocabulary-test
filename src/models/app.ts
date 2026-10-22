@@ -11,14 +11,14 @@ import { signal, computed, type Signal } from '@preact/signals-core';
 import { BUCKETS } from '../config.ts';
 import { bucketUncertainty } from '../stats.ts';
 import { Bucket, emptyBuckets } from './bucket.ts';
+import { ResponseType } from './response-type.ts';
 import { Word, type WordData } from './word.ts';
 
 /** One answered (or skipped) word, as shown in the history list. */
 export interface AnswerRecord {
     word: string;
     rank: number;
-    /** 1.0 = yes, 0.5 = maybe, 0.0 = no, null = skip. */
-    response: number | null;
+    response: ResponseType;
 }
 
 /** Which screen is showing. */
@@ -32,9 +32,6 @@ export interface CurrentWord {
 
 /** Cap on stored history, so a long session cannot grow without bound. */
 const MAX_HISTORY = 1000;
-
-/** 1.0 = yes, 0.5 = maybe, 0.0 = no, null = skip. */
-export type AnswerResponse = 1.0 | 0.5 | 0.0 | null;
 
 export class App {
     // ── Corpus ────────────────────────────────────────────────────────
@@ -85,12 +82,11 @@ export class App {
 
     /**
      * Record an answer about the current word and advance.
-     *   response: 1.0 = yes, 0.5 = maybe, 0.0 = no, null = skip
      *
-     * Skip leaves the tallies and the answer count alone; it only removes the
-     * word from the pool so it is not shown again.
+     * `Skipped` leaves the tallies and the answer count alone; it only removes
+     * the word from the pool so it is not shown again.
      */
-    answer(response: AnswerResponse): void {
+    answer(response: ResponseType): void {
         const current = this.currentWord.peek();
         if (!current) return;
 
@@ -100,7 +96,7 @@ export class App {
 
         bucket.record(response);
 
-        if (response !== null) {
+        if (response !== ResponseType.Skipped) {
             this.answers.value += 1;
             this.askedWords.value = new Set(this.askedWords.peek()).add(current.word.word);
         }
