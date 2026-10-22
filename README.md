@@ -62,7 +62,8 @@ Open <http://localhost:5173>.
 | `npm run preprocess` | Rebuild `data/words.db` from `raw/lemapos.total.txt` |
 | `npm run build` | Type check, then bundle to `dist/` |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Run the statistics tests |
+| `npm test` | Run the test suite once |
+| `npm run test:watch` | Run tests in watch mode |
 
 ## Architecture
 
@@ -113,6 +114,20 @@ pool so it is not shown again.
 
 ## Tests
 
-`npm test` covers the statistics: the point estimate at the all-yes boundary,
-that bucket size does not affect the interval, and a side-by-side comparison of
-Wilson (with and without continuity correction) against Clopper–Pearson.
+Tests run under [Vitest](https://vitest.dev), which transforms through Vite
+the same way the app is built. That means test files are ordinary TypeScript
+with `.ts` import specifiers, and any construct Vite can compile is available
+— unlike Node's strip-only TypeScript loader, which the server and any
+Node-executed code are limited to.
+
+`vitest.config.ts` is separate from `vite.config.ts` so the build-only
+`vite-plugin-checker` does not run during tests.
+
+Coverage today:
+
+- `Bucket` tallying: each response type increments the right counter, a skip
+  is not counted as an answer, and `reset()` clears everything.
+- The point estimate at the all-yes boundary, and that bucket size does not
+  affect the interval.
+- Wilson score (with and without continuity correction) against
+  Clopper–Pearson, side by side.

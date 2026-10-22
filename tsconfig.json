@@ -25,6 +25,6 @@
     "noEmit": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src/**/*.ts", "server/**/*.ts", "vite.config.ts"],
+  "include": ["src/**/*.ts", "server/**/*.ts", "test/**/*.ts", "vite.config.ts", "vitest.config.ts"],
     "exclude": ["node_modules", "dist", ".trash"]
 }
