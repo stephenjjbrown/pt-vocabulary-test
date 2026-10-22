@@ -10,3 +10,12 @@ data/words.db
 
 # Scratch folder for recoverable deletes
 .trash/
+
+# Corpus files.
+#
+# NOT redistributed with this repository: they are derived from corpora whose
+# rights belong to their original publishers, and Linguateca's terms differ
+# per resource (see README). Download them yourself from
+# https://www.linguateca.pt/acesso/info_freq_English.php and place them in
+# `raw/`. The preprocessor needs `raw/lemapos.total.txt`.
+raw/*.txt
