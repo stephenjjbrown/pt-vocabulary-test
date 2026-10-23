@@ -1,10 +1,12 @@
 /**
- * Tally of answers for one frequency bucket.
+ * Tally of answers for one frequency bucket, and the values derived from it.
  *
- * Owns its own bookkeeping: callers hand it a response and it updates the
- * right counter.
+ * The bucket knows how a response moves its counters (`record`) and what its
+ * own estimate and uncertainty are. It does not know how to pick questions or
+ * how buckets combine — those belong to `App`, which owns the collection.
  */
 
+import { wilsonInterval, type Interval } from '../stats.ts';
 import type { BucketDef } from '../config.ts';
 import { ResponseType } from './response-type.ts';
 
@@ -26,10 +28,35 @@ export class Bucket {
     }
 
     /**
+     * Fraction of the bucket's words the user is estimated to know.
+     * 0 when nothing has been answered — we have no data, so we claim nothing.
+     */
+    get pointEstimate(): number {
+        const n = this.sampleSize;
+        return n === 0 ? 0 : this.totalScore / n;
+    }
+
+    /** 95% interval on `pointEstimate`; the whole range when unanswered. */
+    get credibleInterval(): Interval {
+        return wilsonInterval(Math.round(this.totalScore), this.sampleSize);
+    }
+
+    /**
+     * How uncertain this bucket is, as the width of its interval.
+     *
+     * The floor keeps every bucket eligible to be picked at least occasionally,
+     * even once its interval has collapsed.
+     */
+    get uncertainty(): number {
+        const ci = this.credibleInterval;
+        return Math.max(ci.high - ci.low, 0.001);
+    }
+
+    /**
      * Record one response.
      *
-     * `Active` and `Passive` are answers and count toward `asked`; `NotKnown`
-     * is an answer too. `Skipped` is not, so it only bumps `skippedCount`.
+     * `Active`, `Passive` and `NotKnown` are answers and count toward `asked`.
+     * `Skipped` is not, so it only bumps `skippedCount`.
      */
     record(response: ResponseType): void {
         switch (response) {

@@ -9,7 +9,7 @@
 import { signal, computed, type Signal } from '@preact/signals-core';
 
 import { BUCKETS } from '../config.ts';
-import { bucketUncertainty } from '../stats.ts';
+import type { Interval } from '../stats.ts';
 import { Bucket, emptyBuckets } from './bucket.ts';
 import { ResponseType } from './response-type.ts';
 import { Word, type WordData } from './word.ts';
@@ -50,6 +50,41 @@ export class App {
 
     // ── Derived ───────────────────────────────────────────────────────
     readonly questionCount = computed(() => this.answers.value);
+
+    /**
+     * Estimated total vocabulary, in words: each bucket's point estimate
+     * scaled by how many words the bucket spans.
+     */
+    readonly vocabularyEstimate = computed((): number => {
+        const buckets = this.buckets.value;
+        let total = 0;
+        for (let i = 0; i < BUCKETS.length; i++) {
+            const bucket = buckets[i];
+            if (!bucket) continue;
+            total += bucket.pointEstimate * BUCKETS[i]!.width;
+        }
+        return total;
+    });
+
+    /**
+     * 95% interval on the total, in words. Each bucket's interval is scaled by
+     * its width and the bounds are summed, treating buckets as independent
+     * samples — which they are, since each is sampled separately.
+     */
+    readonly vocabularyInterval = computed((): Interval => {
+        const buckets = this.buckets.value;
+        let low = 0;
+        let high = 0;
+        for (let i = 0; i < BUCKETS.length; i++) {
+            const bucket = buckets[i];
+            if (!bucket) continue;
+            const ci = bucket.credibleInterval;
+            const width = BUCKETS[i]!.width;
+            low += ci.low * width;
+            high += ci.high * width;
+        }
+        return { low: Math.round(low), high: Math.round(high) };
+    });
 
     // ── Lifecycle ─────────────────────────────────────────────────────
 
@@ -140,7 +175,7 @@ export class App {
         const words = this.words.peek();
         if (buckets.length === 0 || words.length === 0) return null;
 
-        const weights = buckets.map(b => bucketUncertainty(b));
+        const weights = buckets.map(b => b.uncertainty);
         const total = weights.reduce((a, w) => a + w, 0);
         if (total <= 0) return null;
 

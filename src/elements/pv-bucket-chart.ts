@@ -32,7 +32,6 @@ import {
 
 import { app } from '../models/app.ts';
 import { BUCKETS } from '../config.ts';
-import { bucketPointEstimate, bucketCredibleInterval } from '../stats.ts';
 import type { Bucket } from '../models/bucket.ts';
 import { LightElement } from './base.ts';
 
@@ -116,10 +115,10 @@ export class PvBucketChart extends LightElement {
 
     private buildBars(buckets: Bucket[]): BucketBarPoint[] {
         return buckets.map((b, i) => {
-            const ci = bucketCredibleInterval(b);
+            const ci = b.credibleInterval;
             return {
                 x: BUCKETS[i]?.label ?? String(i + 1),
-                y: bucketPointEstimate(b),
+                y: b.pointEstimate,
                 yMin: ci.low,
                 yMax: ci.high,
             };
@@ -128,7 +127,7 @@ export class PvBucketChart extends LightElement {
 
     private buildPoints(buckets: Bucket[]): BucketPointMarker[] {
         return buckets.map((b, i) => {
-            const y = bucketPointEstimate(b);
+            const y = b.pointEstimate;
             return {
                 x: BUCKETS[i]?.label ?? String(i + 1),
                 y,

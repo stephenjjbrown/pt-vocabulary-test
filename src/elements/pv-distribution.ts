@@ -9,8 +9,6 @@ import { html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 
 import { app } from '../models/app.ts';
-import { BUCKETS } from '../config.ts';
-import { vocabEstimate, vocabCredibleInterval } from '../stats.ts';
 import { LightElement } from './base.ts';
 
 const MAX_VOCAB_PLOT = 64000;
@@ -22,12 +20,21 @@ export class PvDistribution extends LightElement {
     override connectedCallback(): void {
         super.connectedCallback();
         this.observe(() => {
-            const buckets = app.buckets.value;
-            const ci = vocabCredibleInterval(buckets, BUCKETS);
-            const estimate = vocabEstimate(buckets, BUCKETS);
+            const ci = app.vocabularyInterval.value;
+            const estimate = app.vocabularyEstimate.value;
             this.requestUpdate();
             this.draw(ci.low, ci.high, estimate);
         });
+    }
+
+    /**
+     * The effect above runs during connectedCallback, before Lit has rendered
+     * for the first time, so its first draw finds no canvas. Draw once more
+     * with the canvas in place.
+     */
+    protected override firstUpdated(): void {
+        const ci = app.vocabularyInterval.value;
+        this.draw(ci.low, ci.high, app.vocabularyEstimate.value);
     }
 
     override render() {

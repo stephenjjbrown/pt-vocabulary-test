@@ -8,7 +8,6 @@ import { customElement } from 'lit/decorators.js';
 
 import { app } from '../models/app.ts';
 import { BUCKETS } from '../config.ts';
-import { bucketPointEstimate, bucketCredibleInterval, vocabEstimate, vocabCredibleInterval } from '../stats.ts';
 import { LightElement } from './base.ts';
 
 @customElement('pv-results')
@@ -16,16 +15,17 @@ export class PvResults extends LightElement {
     override connectedCallback(): void {
         super.connectedCallback();
         this.observe(() => {
-            app.buckets.value;
             app.answers.value;
+            app.vocabularyEstimate.value;
+            app.vocabularyInterval.value;
             this.requestUpdate();
         });
     }
 
     override render() {
         const buckets = app.buckets.value;
-        const estimate = vocabEstimate(buckets, BUCKETS);
-        const ci = vocabCredibleInterval(buckets, BUCKETS);
+        const estimate = app.vocabularyEstimate.value;
+        const ci = app.vocabularyInterval.value;
 
         return html`
             <div class="results">
@@ -54,8 +54,8 @@ export class PvResults extends LightElement {
                     <h3>Bucket Breakdown</h3>
                     <div>
                         ${buckets.map((b, i) => {
-                            const mean = bucketPointEstimate(b);
-                            const bucketCi = bucketCredibleInterval(b);
+                            const mean = b.pointEstimate;
+                            const bucketCi = b.credibleInterval;
                             return html`
                                 <div class="profile-band">
                                     <div class="band-label">${BUCKETS[i]?.label ?? ''}</div>

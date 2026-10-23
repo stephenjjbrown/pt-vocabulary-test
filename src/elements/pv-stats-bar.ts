@@ -1,6 +1,6 @@
 /**
  * The three stat tiles: questions answered, estimated vocabulary, and the
- * 95% credible interval.
+ * 95% interval around it.
  *
  * Reads the model. On connect it subscribes to the signals it renders and
  * disposes those subscriptions on disconnect.
@@ -10,8 +10,6 @@ import { html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 
 import { app } from '../models/app.ts';
-import { BUCKETS } from '../config.ts';
-import { vocabEstimate, vocabCredibleInterval } from '../stats.ts';
 import { LightElement } from './base.ts';
 
 @customElement('pv-stats-bar')
@@ -22,15 +20,15 @@ export class PvStatsBar extends LightElement {
             // Reading these registers them as dependencies, so the
             // subscription re-runs (and triggers an update) on change.
             app.answers.value;
-            app.buckets.value;
+            app.vocabularyEstimate.value;
+            app.vocabularyInterval.value;
             this.requestUpdate();
         });
     }
 
     override render() {
-        const buckets = app.buckets.value;
-        const estimate = vocabEstimate(buckets, BUCKETS);
-        const ci = vocabCredibleInterval(buckets, BUCKETS);
+        const estimate = app.vocabularyEstimate.value;
+        const ci = app.vocabularyInterval.value;
 
         return html`
             <div class="stats-bar">
