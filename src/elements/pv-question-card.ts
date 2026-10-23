@@ -1,6 +1,6 @@
 /**
  * The question card: shows the current word and rank, and hosts the
- * Yes / Maybe / No / Skip buttons.
+ * Active / Passive / Not known / Skip buttons.
  *
  * Reads the current word from the model and calls `app.answer()` — the view
  * never mutates state itself.
@@ -39,9 +39,15 @@ export class PvQuestionCard extends LightElement {
                 </div>
                 <p class="question-prompt">Do you know this word?</p>
                 <div class="button-row">
-                    <button class="btn btn-yes" @click=${() => app.answer(ResponseType.Active)}>Yes</button>
-                    <button class="btn btn-maybe" @click=${() => app.answer(ResponseType.Passive)}>Maybe (0.5)</button>
-                    <button class="btn btn-no" @click=${() => app.answer(ResponseType.NotKnown)}>No</button>
+                    <button class="btn btn-active" @click=${() => app.answer(ResponseType.Active)}>
+                        Active <span class="btn-hint">I use it</span>
+                    </button>
+                    <button class="btn btn-passive" @click=${() => app.answer(ResponseType.Passive)}>
+                        Passive <span class="btn-hint">I recognise it</span>
+                    </button>
+                    <button class="btn btn-not-known" @click=${() => app.answer(ResponseType.NotKnown)}>
+                        Not known
+                    </button>
                 </div>
                 <div class="button-row secondary">
                     <button class="btn btn-skip" @click=${() => app.answer(ResponseType.Skipped)}>Skip</button>

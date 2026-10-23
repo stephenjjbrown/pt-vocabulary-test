@@ -1,9 +1,8 @@
 /**
  * Bucket — the per-frequency-band tally, and the values derived from it.
  *
- * Covers how each response type moves the counters, that a skip is not treated
- * as an answer, and that the estimate, interval and uncertainty follow from
- * the tallies.
+ * Three mutually exclusive outcomes per word: active, passive, not known.
+ * Passive is a category of its own, not a half-strength yes.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -12,20 +11,25 @@ import { Bucket } from '../src/models/bucket.ts';
 import { ResponseType } from '../src/models/response-type.ts';
 
 interface Tallies {
-    yes?: number;
-    maybe?: number;
-    no?: number;
+    active?: number;
+    passive?: number;
+    notKnown?: number;
     skipped?: number;
 }
 
 /** Build a Bucket with the given tallies, bypassing record(). */
-function bucket({ yes = 0, maybe = 0, no = 0, skipped = 0 }: Tallies = {}): Bucket {
+function bucket({
+    active = 0,
+    passive = 0,
+    notKnown = 0,
+    skipped = 0,
+}: Tallies = {}): Bucket {
     const b = new Bucket();
-    b.yesCount = yes;
-    b.maybeCount = maybe;
-    b.noCount = no;
+    b.activeCount = active;
+    b.passiveCount = passive;
+    b.notKnownCount = notKnown;
     b.skippedCount = skipped;
-    b.asked = yes + maybe + no;
+    b.asked = active + passive + notKnown;
     return b;
 }
 
@@ -33,13 +37,13 @@ describe('Bucket tallies', () => {
     it('starts empty', () => {
         const b = new Bucket();
 
-        expect(b.yesCount).toBe(0);
-        expect(b.maybeCount).toBe(0);
-        expect(b.noCount).toBe(0);
+        expect(b.activeCount).toBe(0);
+        expect(b.passiveCount).toBe(0);
+        expect(b.notKnownCount).toBe(0);
         expect(b.skippedCount).toBe(0);
         expect(b.asked).toBe(0);
         expect(b.sampleSize).toBe(0);
-        expect(b.totalScore).toBe(0);
+        expect(b.knownCount).toBe(0);
     });
 
     it('record(): increments the counter matching the response type', () => {
@@ -48,21 +52,19 @@ describe('Bucket tallies', () => {
         b.record(ResponseType.Passive);
         b.record(ResponseType.NotKnown);
 
-        expect(b.yesCount).toBe(1);
-        expect(b.maybeCount).toBe(1);
-        expect(b.noCount).toBe(1);
+        expect(b.activeCount).toBe(1);
+        expect(b.passiveCount).toBe(1);
+        expect(b.notKnownCount).toBe(1);
         expect(b.asked).toBe(3);
     });
 
-    it('record(): weighs a passive (maybe) answer as half', () => {
+    it('record(): counts a passive answer as a full word, not half', () => {
         const b = new Bucket();
-        b.record(ResponseType.Active);
-        b.record(ResponseType.Active);
         b.record(ResponseType.Passive);
 
-        // 2 full + 1 half
-        expect(b.totalScore).toBe(2.5);
-        expect(b.sampleSize).toBe(3);
+        expect(b.passiveCount).toBe(1);
+        expect(b.knownCount).toBe(1);
+        expect(b.knownShare).toBe(1);
     });
 
     it('record(): does not treat a skip as an answer', () => {
@@ -73,7 +75,7 @@ describe('Bucket tallies', () => {
         expect(b.skippedCount).toBe(1);
         expect(b.asked).toBe(1);
         expect(b.sampleSize).toBe(1);
-        expect(b.totalScore).toBe(1);
+        expect(b.knownCount).toBe(1);
     });
 
     it('reset(): clears every tally', () => {
@@ -84,74 +86,101 @@ describe('Bucket tallies', () => {
         b.record(ResponseType.Skipped);
         b.reset();
 
-        expect(b.yesCount).toBe(0);
-        expect(b.maybeCount).toBe(0);
-        expect(b.noCount).toBe(0);
+        expect(b.activeCount).toBe(0);
+        expect(b.passiveCount).toBe(0);
+        expect(b.notKnownCount).toBe(0);
         expect(b.skippedCount).toBe(0);
         expect(b.asked).toBe(0);
     });
 });
 
-describe('Bucket.pointEstimate', () => {
-    it('is 0 when nothing has been answered, rather than assuming a midpoint', () => {
-        expect(bucket().pointEstimate).toBe(0);
+describe('Bucket knownCount', () => {
+    it('is active plus passive', () => {
+        expect(bucket({ active: 3, passive: 2, notKnown: 5 }).knownCount).toBe(5);
     });
 
-    it('is the literal ratio, so 21/21 is exactly 1', () => {
-        expect(bucket({ yes: 21 }).pointEstimate).toBe(1);
-    });
-
-    it('is 20/21 when a single answer is "no"', () => {
-        expect(bucket({ yes: 20, no: 1 }).pointEstimate).toBeCloseTo(20 / 21, 12);
-    });
-
-    it('weighs a passive answer as half', () => {
-        // 3 yes + 1 maybe over 4 answers
-        expect(bucket({ yes: 3, maybe: 1 }).pointEstimate).toBeCloseTo(3.5 / 4, 12);
-    });
-
-    it('ignores skips entirely', () => {
-        const withSkips = bucket({ yes: 1, no: 1, skipped: 9 });
-        const withoutSkips = bucket({ yes: 1, no: 1 });
-
-        expect(withSkips.pointEstimate).toBe(withoutSkips.pointEstimate);
+    it('excludes not-known words', () => {
+        expect(bucket({ active: 0, passive: 0, notKnown: 10 }).knownCount).toBe(0);
     });
 });
 
-describe('Bucket.credibleInterval', () => {
-    it('spans the whole range when nothing has been answered', () => {
-        expect(bucket().credibleInterval).toEqual({ low: 0, high: 1 });
+describe('Bucket shares', () => {
+    it('are all 0 before anything is answered', () => {
+        const b = bucket();
+
+        expect(b.activeShare).toBe(0);
+        expect(b.passiveShare).toBe(0);
+        expect(b.knownShare).toBe(0);
     });
 
-    it('is asymmetric at the boundary: upper pinned at 1, lower well below', () => {
-        const ci = bucket({ yes: 21 }).credibleInterval;
+    it('are the counts over the answers', () => {
+        // 30 active, 20 passive, 50 not known out of 100
+        const b = bucket({ active: 30, passive: 20, notKnown: 50 });
+
+        expect(b.activeShare).toBeCloseTo(0.3, 12);
+        expect(b.passiveShare).toBeCloseTo(0.2, 12);
+        expect(b.knownShare).toBeCloseTo(0.5, 12);
+    });
+
+    it('sum to 1 across all three categories', () => {
+        const b = bucket({ active: 30, passive: 20, notKnown: 50 });
+        const notKnownShare = b.notKnownCount / b.sampleSize;
+
+        expect(b.activeShare + b.passiveShare + notKnownShare).toBeCloseTo(1, 12);
+    });
+
+    it('treat a passive word as fully known, not half', () => {
+        const b = bucket({ active: 0, passive: 10 });
+
+        // Under the old half-weighting this would have been 0.5.
+        expect(b.knownShare).toBe(1);
+    });
+
+    it('ignore skips', () => {
+        const withSkips = bucket({ active: 1, notKnown: 1, skipped: 9 });
+        const withoutSkips = bucket({ active: 1, notKnown: 1 });
+
+        expect(withSkips.knownShare).toBe(withoutSkips.knownShare);
+    });
+});
+
+describe('Bucket intervals', () => {
+    it('span the whole range before anything is answered', () => {
+        const b = bucket();
+
+        expect(b.activeInterval).toEqual({ low: 0, high: 1 });
+        expect(b.passiveInterval).toEqual({ low: 0, high: 1 });
+        expect(b.knownInterval).toEqual({ low: 0, high: 1 });
+    });
+
+    it('pin the upper bound at 1 for the known interval when all are known', () => {
+        const ci = bucket({ active: 10, passive: 10 }).knownInterval;
 
         expect(ci.high).toBe(1);
         expect(ci.low).toBeLessThan(1);
-        expect(ci.low).toBeGreaterThan(0.5);
     });
 
-    it('does not depend on how many words the bucket contains', () => {
-        // The interval is a function of the tallies alone; bucket width only
-        // matters when scaling the fraction to a word count.
-        const a = bucket({ yes: 21 }).credibleInterval;
-        const b = bucket({ yes: 21 }).credibleInterval;
+    it('give the known interval a tighter bound than either category', () => {
+        // Known pools both categories, so it is more precise than its parts.
+        const b = bucket({ active: 50, passive: 30, notKnown: 20 });
+        const knownWidth = b.knownInterval.high - b.knownInterval.low;
+        const activeWidth = b.activeInterval.high - b.activeInterval.low;
 
-        expect(a).toEqual(b);
+        expect(knownWidth).toBeLessThan(activeWidth);
     });
 
-    it('narrows as answers accumulate at the same rate', () => {
-        const few = bucket({ yes: 5, no: 5 }).credibleInterval;
-        const many = bucket({ yes: 50, no: 50 }).credibleInterval;
+    it('narrow as answers accumulate at the same rate', () => {
+        const few = bucket({ active: 5, notKnown: 5 }).knownInterval;
+        const many = bucket({ active: 50, notKnown: 50 }).knownInterval;
 
         expect(many.high - many.low).toBeLessThan(few.high - few.low);
     });
 });
 
 describe('Bucket.uncertainty', () => {
-    it('is the width of the credible interval', () => {
-        const b = bucket({ yes: 3, no: 1 });
-        const ci = b.credibleInterval;
+    it('is the width of the known interval', () => {
+        const b = bucket({ active: 3, notKnown: 1 });
+        const ci = b.knownInterval;
 
         expect(b.uncertainty).toBeCloseTo(ci.high - ci.low, 12);
     });
@@ -161,7 +190,6 @@ describe('Bucket.uncertainty', () => {
     });
 
     it('never reaches zero, so a settled bucket can still be picked', () => {
-        // The interval width collapses well below the floor with many answers.
-        expect(bucket({ yes: 10000 }).uncertainty).toBeGreaterThanOrEqual(0.001);
+        expect(bucket({ active: 10000 }).uncertainty).toBeGreaterThanOrEqual(0.001);
     });
 });

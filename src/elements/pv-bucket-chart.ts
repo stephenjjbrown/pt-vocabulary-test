@@ -1,34 +1,39 @@
 /**
- * Bucket knowledge chart: bar chart with error bars.
+ * Knowledge by frequency bucket, as an area chart.
  *
- * Each bar spans the 95% credible interval (Wilson with continuity
- * correction); an orange marker shows the point estimate k/n.
+ * The y axis is the fraction of a bucket's words, the x axis the buckets in
+ * frequency order.
  *
- * Chart.js owns the canvas, so its lifecycle is tied to the element's:
- * create it once the canvas exists, update it when the model changes, and
- * destroy it on disconnect so the instance doesn't leak across hot reloads.
+ * Two overlapping sets of three areas are drawn, each filled from zero at a
+ * single alpha so that overlaps deepen:
+ *
+ *   Known range (yellow)   — words answered active OR passive
+ *     0 → lower bound, lower → estimate, estimate → upper bound
+ *
+ *   Active range (green)   — words answered active only
+ *     0 → lower bound, lower → estimate, estimate → upper bound
+ *
+ * The active areas are drawn last, so they sit over the known ones. Since
+ * active is a subset of known, the green never rises above the yellow.
+ *
+ * Chart.js owns the canvas, so its lifecycle is tied to the element's: create
+ * it once the canvas exists, update it when the model changes, and destroy it
+ * on disconnect so the instance doesn't leak across hot reloads.
  */
 
 import { html } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import {
     Chart,
-    BarController,
-    BarElement,
+    LineController,
+    LineElement,
+    PointElement,
     LinearScale,
     CategoryScale,
+    Filler,
     Tooltip,
-    Legend,
-    PointElement,
-    ScatterController,
-    LineController,
     type ChartConfiguration,
 } from 'chart.js';
-import {
-    BarWithErrorBarsController,
-    BarWithErrorBar,
-    PointWithErrorBar,
-} from 'chartjs-chart-error-bars';
 
 import { app } from '../models/app.ts';
 import { BUCKETS } from '../config.ts';
@@ -36,39 +41,74 @@ import type { Bucket } from '../models/bucket.ts';
 import { LightElement } from './base.ts';
 
 Chart.register(
-    BarController,
-    BarElement,
+    LineController,
+    LineElement,
+    PointElement,
     LinearScale,
     CategoryScale,
+    Filler,
     Tooltip,
-    Legend,
-    ScatterController,
-    LineController,
-    PointElement,
-    BarWithErrorBarsController,
-    BarWithErrorBar,
-    PointWithErrorBar,
 );
 
-/** One bar: the CI spans yMin..yMax, y is the point estimate. */
-interface BucketBarPoint {
-    x: string;
-    y: number;
-    yMin: number;
-    yMax: number;
+/** Known (active or passive). */
+const YELLOW = 'rgba(245, 158, 11, 0.33)';
+
+/** Active only, drawn over the known areas. */
+const GREEN = 'rgba(34, 197, 94, 0.2)';
+
+/** One category's three boundaries across all buckets. */
+interface Trio {
+    lows: number[];
+    estimates: number[];
+    highs: number[];
 }
 
-/**
- * One point marker. The error-bar plugin's types require min/max alongside
- * x/y, so we set them equal to the value: a point estimate has no spread
- * of its own, so the whisker collapses to zero length.
- */
-interface BucketPointMarker {
-    x: string;
-    y: number;
-    yMin: number;
-    yMax: number;
+interface BucketSeries {
+    known: Trio;
+    active: Trio;
 }
+
+function emptyTrio(): Trio {
+    return { lows: [], estimates: [], highs: [] };
+}
+
+function buildSeries(buckets: Bucket[]): BucketSeries {
+    const known = emptyTrio();
+    const active = emptyTrio();
+
+    for (const b of buckets) {
+        known.lows.push(b.knownInterval.low);
+        known.estimates.push(b.knownShare);
+        known.highs.push(b.knownInterval.high);
+
+        active.lows.push(b.activeInterval.low);
+        active.estimates.push(b.activeShare);
+        active.highs.push(b.activeInterval.high);
+    }
+
+    return { known, active };
+}
+
+/** One area: a line through the series, filled down to zero. */
+function areaDataset(label: string, data: number[], colour: string) {
+    return {
+        label,
+        data,
+        fill: 'origin' as const,
+        backgroundColor: colour,
+        borderWidth: 0,
+        pointRadius: 0,
+        tension: 0,
+    };
+}
+
+/** Dataset indices, in the order they are added to the chart. */
+const KNOWN_HIGH = 0;
+const KNOWN_ESTIMATE = 1;
+const KNOWN_LOW = 2;
+const ACTIVE_HIGH = 3;
+const ACTIVE_ESTIMATE = 4;
+const ACTIVE_LOW = 5;
 
 @customElement('pv-bucket-chart')
 export class PvBucketChart extends LightElement {
@@ -77,13 +117,11 @@ export class PvBucketChart extends LightElement {
     override connectedCallback(): void {
         super.connectedCallback();
         this.observe(() => {
-            const buckets = app.buckets.value;
+            const series = buildSeries(app.buckets.value);
             if (!this.chart) {
-                this.createChart(buckets);
+                this.createChart(series);
             } else {
-                this.chart.data.datasets[0]!.data = this.buildBars(buckets);
-                this.chart.data.datasets[1]!.data = this.buildPoints(buckets);
-                this.chart.update('none');
+                this.applySeries(series);
             }
         });
     }
@@ -99,8 +137,9 @@ export class PvBucketChart extends LightElement {
             <div class="buckets-container">
                 <h2>Knowledge by Frequency Bucket</h2>
                 <p class="buckets-legend">
-                    <span class="legend-item"><span class="legend-bar"></span> 95% CI</span>
-                    <span class="legend-item"><span class="legend-dot"></span> Point estimate (k/n)</span>
+                    <span class="legend-item"><span class="legend-bar known"></span> Recognised</span>
+                    <span class="legend-item"><span class="legend-bar active"></span> Active</span>
+                    <span class="legend-item">Darker shading is the range we are confident about</span>
                 </p>
                 <div class="buckets-chart-wrap">
                     <canvas></canvas>
@@ -110,72 +149,56 @@ export class PvBucketChart extends LightElement {
     }
 
     protected override firstUpdated(): void {
-        if (!this.chart) this.createChart(app.buckets.value);
+        if (!this.chart) this.createChart(buildSeries(app.buckets.value));
     }
 
-    private buildBars(buckets: Bucket[]): BucketBarPoint[] {
-        return buckets.map((b, i) => {
-            const ci = b.credibleInterval;
-            return {
-                x: BUCKETS[i]?.label ?? String(i + 1),
-                y: b.pointEstimate,
-                yMin: ci.low,
-                yMax: ci.high,
-            };
-        });
+    private applySeries(series: BucketSeries): void {
+        if (!this.chart) return;
+
+        const sets = this.chart.data.datasets;
+        const assign = (index: number, data: number[]): void => {
+            const set = sets[index];
+            if (set) set.data = data;
+        };
+
+        // Known first, active second — matching the draw order below.
+        assign(KNOWN_HIGH, series.known.highs);
+        assign(KNOWN_ESTIMATE, series.known.estimates);
+        assign(KNOWN_LOW, series.known.lows);
+        assign(ACTIVE_HIGH, series.active.highs);
+        assign(ACTIVE_ESTIMATE, series.active.estimates);
+        assign(ACTIVE_LOW, series.active.lows);
+
+        this.chart.update('none');
     }
 
-    private buildPoints(buckets: Bucket[]): BucketPointMarker[] {
-        return buckets.map((b, i) => {
-            const y = b.pointEstimate;
-            return {
-                x: BUCKETS[i]?.label ?? String(i + 1),
-                y,
-                yMin: y,
-                yMax: y,
-            };
-        });
-    }
-
-    private createChart(buckets: Bucket[]): void {
+    private createChart(series: BucketSeries): void {
         const canvas = this.querySelector('canvas');
         if (!(canvas instanceof HTMLCanvasElement)) return;
 
         // Defensive: something else may have claimed this canvas already.
         Chart.getChart(canvas)?.destroy();
 
-        const config: ChartConfiguration = {
-            type: BarWithErrorBarsController.id,
+        const config: ChartConfiguration<'line'> = {
+            type: 'line',
             data: {
                 labels: BUCKETS.map(b => b.label),
                 datasets: [
-                    {
-                        label: '95% CI',
-                        data: this.buildBars(buckets),
-                        backgroundColor: 'rgba(56, 189, 248, 0.25)',
-                        borderColor: 'rgba(56, 189, 248, 0.8)',
-                        borderWidth: 1,
-                        errorBarColor: 'rgba(56, 189, 248, 1)',
-                        errorBarLineWidth: 2,
-                        errorBarWhiskerSize: 8,
-                        // The point estimate is shown by the overlay dataset.
-                        pointRadius: 0,
-                    },
-                    {
-                        label: 'Point estimate',
-                        type: 'scatter',
-                        data: this.buildPoints(buckets),
-                        backgroundColor: '#f59e0b',
-                        borderColor: '#f59e0b',
-                        pointRadius: 5,
-                        pointHoverRadius: 7,
-                    },
+                    // Known (yellow) first, so the active (green) areas land on
+                    // top of them.
+                    areaDataset('Known upper bound', series.known.highs, YELLOW),
+                    areaDataset('Known best estimate', series.known.estimates, YELLOW),
+                    areaDataset('Known lower bound', series.known.lows, YELLOW),
+                    areaDataset('Active upper bound', series.active.highs, GREEN),
+                    areaDataset('Active best estimate', series.active.estimates, GREEN),
+                    areaDataset('Active lower bound', series.active.lows, GREEN),
                 ],
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 animation: false,
+                interaction: { mode: 'index', intersect: false },
                 scales: {
                     y: {
                         beginAtZero: true,
@@ -194,16 +217,25 @@ export class PvBucketChart extends LightElement {
                 plugins: {
                     legend: { display: false },
                     tooltip: {
+                        // One tooltip per bucket rather than one line per area.
+                        filter: (item) => item.datasetIndex === KNOWN_HIGH,
                         callbacks: {
                             label: (ctx) => {
-                                const d = ctx.raw as Partial<BucketBarPoint>;
-                                if (d.yMin != null && d.yMax != null) {
-                                    return `95% CI: [${(d.yMin * 100).toFixed(1)}%, ${(d.yMax * 100).toFixed(1)}%]`;
-                                }
-                                if (d.y != null) {
-                                    return `Point estimate: ${(d.y * 100).toFixed(1)}%`;
-                                }
-                                return '';
+                                const sets = ctx.chart.data.datasets;
+                                const i = ctx.dataIndex;
+
+                                const value = (index: number): number =>
+                                    Number(sets[index]?.data[i]);
+
+                                const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
+
+                                const knownRange = `${pct(value(KNOWN_LOW))}–${pct(value(KNOWN_HIGH))}`;
+                                const activeRange = `${pct(value(ACTIVE_LOW))}–${pct(value(ACTIVE_HIGH))}`;
+
+                                return [
+                                    `recognised ${pct(value(KNOWN_ESTIMATE))} [${knownRange}]`,
+                                    `active ${pct(value(ACTIVE_ESTIMATE))} [${activeRange}]`,
+                                ];
                             },
                         },
                     },

@@ -28,9 +28,9 @@ export class PvHistory extends LightElement {
     /** Display for each response. Typed as a full record, so adding a
      *  ResponseType member is a compile error until it is given a label. */
     private static readonly LABELS: Record<ResponseType, { badge: string; label: string }> = {
-        [ResponseType.Active]: { badge: 'badge-yes', label: 'Yes' },
-        [ResponseType.Passive]: { badge: 'badge-maybe', label: 'Maybe' },
-        [ResponseType.NotKnown]: { badge: 'badge-no', label: 'No' },
+        [ResponseType.Active]: { badge: 'badge-active', label: 'Active' },
+        [ResponseType.Passive]: { badge: 'badge-passive', label: 'Passive' },
+        [ResponseType.NotKnown]: { badge: 'badge-not-known', label: 'Not known' },
         [ResponseType.Skipped]: { badge: 'badge-skip', label: 'Skip' },
     };
 

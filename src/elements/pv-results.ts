@@ -24,24 +24,28 @@ export class PvResults extends LightElement {
 
     override render() {
         const buckets = app.buckets.value;
-        const estimate = app.vocabularyEstimate.value;
-        const ci = app.vocabularyInterval.value;
+        const active = app.activeVocabulary.value;
+        const recognised = app.vocabularyEstimate.value;
+        const recognisedCi = app.vocabularyInterval.value;
 
         return html`
             <div class="results">
                 <h2>🎉 Final Results</h2>
                 <div class="result-grid">
                     <div class="result-card">
-                        <span class="result-label">Estimated vocabulary</span>
-                        <span class="result-value">${Math.round(estimate).toLocaleString()}</span>
-                        <span class="result-sub">words known</span>
+                        <span class="result-label">Active vocabulary</span>
+                        <span class="result-value">${Math.round(active).toLocaleString()}</span>
+                        <span class="result-sub">words you use</span>
                     </div>
                     <div class="result-card">
-                        <span class="result-label">95% credible interval</span>
+                        <span class="result-label">Total recognised</span>
                         <span class="result-value"
-                            >${ci.low.toLocaleString()}–${ci.high.toLocaleString()}</span
+                            >${Math.round(recognised).toLocaleString()}</span
                         >
-                        <span class="result-sub">range of uncertainty</span>
+                        <span class="result-sub">
+                            ${recognisedCi.low.toLocaleString()}–${recognisedCi.high.toLocaleString()}
+                            at 95%
+                        </span>
                     </div>
                     <div class="result-card">
                         <span class="result-label">Questions answered</span>
@@ -54,14 +58,16 @@ export class PvResults extends LightElement {
                     <h3>Bucket Breakdown</h3>
                     <div>
                         ${buckets.map((b, i) => {
-                            const mean = b.pointEstimate;
-                            const bucketCi = b.credibleInterval;
+                            const ci = b.knownInterval;
                             return html`
                                 <div class="profile-band">
                                     <div class="band-label">${BUCKETS[i]?.label ?? ''}</div>
-                                    <div class="band-value">${Math.round(mean * 100)}%</div>
+                                    <div class="band-value">
+                                        ${Math.round(b.knownShare * 100)}% recognised
+                                    </div>
                                     <div style="font-size:0.7rem;color:var(--text-muted);">
-                                        ${Math.round(bucketCi.low * 100)}–${Math.round(bucketCi.high * 100)}%
+                                        active ${Math.round(b.activeShare * 100)}% · CI
+                                        ${Math.round(ci.low * 100)}–${Math.round(ci.high * 100)}%
                                     </div>
                                 </div>
                             `;
