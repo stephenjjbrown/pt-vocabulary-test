@@ -14,7 +14,6 @@
  */
 
 import { wilsonInterval, type Interval } from '../stats.ts';
-import type { BucketDef } from '../config.ts';
 import { ResponseType } from './response-type.ts';
 
 export class Bucket {
@@ -120,9 +119,4 @@ export class Bucket {
         const n = this.sampleSize;
         return n === 0 ? 0 : count / n;
     }
-}
-
-/** A fresh set of empty buckets, one per frequency band. */
-export function emptyBuckets(defs: ReadonlyArray<BucketDef>): Bucket[] {
-    return defs.map(() => new Bucket());
 }

@@ -28,7 +28,7 @@ export class PvStatsBar extends LightElement {
         this.observe(() => {
             // Reading these registers them as dependencies, so the
             // subscription re-runs (and triggers an update) on change.
-            app.answers.value;
+            app.questionCount.value;
             app.activeVocabulary.value;
             app.vocabularyEstimate.value;
             this.requestUpdate();
@@ -43,7 +43,7 @@ export class PvStatsBar extends LightElement {
             <div class="stats-bar">
                 <div class="stat">
                     <span class="stat-label">Questions answered</span>
-                    <span class="stat-value">${app.answers.value}</span>
+                    <span class="stat-value">${app.questionCount.value}</span>
                 </div>
                 <div class="stat">
                     <span class="stat-label">Active vocabulary</span>

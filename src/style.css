@@ -15,6 +15,39 @@
     --border: #334155;
     --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
     --radius: 12px;
+
+    /* Area-chart palette.
+     *
+     * These two are the only colours to change: everything else derives from
+     * them. Set either to any CSS <color> and the three shades plus the legend
+     * swatches follow.
+     *
+     * Each shade is a colour-mix against black, which scales the channels
+     * rather than the alpha — 50% of red is rgb(128,0,0), not half-transparent
+     * red. That matters because the chart blends additively, and translucent
+     * fills would let the backdrop through instead of summing. */
+    --chart-known-colour: rgb(60, 0, 180);
+    --chart-active-colour: rgba(20,140,80);
+
+    /* Intensity ramp.
+     *
+     * Geometric rather than arithmetic: each shade is a fixed fraction of the
+     * one above it, which is the discrete form of a logarithmic scale. Equal
+     * steps (100 / 50 / 33) bunch up toward the bright end, because channel
+     * values are not perceived linearly.
+     *
+     * Change the ratio here; both hues follow. */
+    --chart-intensity-strong: 90%;
+    --chart-intensity-mid: 75%;
+    --chart-intensity-weak: 40%;
+
+    --chart-known-strong: color-mix(in srgb, var(--chart-known-colour) var(--chart-intensity-strong), black);
+    --chart-known-mid: color-mix(in srgb, var(--chart-known-colour) var(--chart-intensity-mid), black);
+    --chart-known-weak: color-mix(in srgb, var(--chart-known-colour) var(--chart-intensity-weak), black);
+
+    --chart-active-strong: color-mix(in srgb, var(--chart-active-colour) var(--chart-intensity-strong), black);
+    --chart-active-mid: color-mix(in srgb, var(--chart-active-colour) var(--chart-intensity-mid), black);
+    --chart-active-weak: color-mix(in srgb, var(--chart-active-colour) var(--chart-intensity-weak), black);
 }
 
 * {
@@ -162,23 +195,49 @@ h1 {
 }
 
 .legend-bar.known {
-    background: rgba(245, 158, 11, 0.33);
+    background: var(--chart-known-strong);
 }
 
 .legend-bar.active {
-    background: rgba(34, 197, 94, 0.2);
+    background: var(--chart-active-strong);
+}
+
+/* The composition chart identifies the two answers, so it uses the same
+   colours as the Active and Passive buttons rather than the area palette. */
+.legend-bar.mix-active {
+    background: var(--active);
+}
+
+.legend-bar.mix-passive {
+    background: var(--passive);
 }
 
 .buckets-chart-wrap {
     position: relative;
     height: 380px;
     width: 100%;
+    /* Black rather than the card's surface colour, so the additive areas read
+       against a neutral floor. Purely presentational: the canvas blends each
+       shape against what it has already drawn, not against this backdrop. */
+    background: #000;
+    border-radius: 6px;
 }
 
 /* Absolutely position the canvas so its intrinsic height can't feed back
    into the wrapper's height. Without this, Chart.js + responsive:true
    makes the chart grow without bound. */
 .buckets-chart-wrap canvas {
+    position: absolute;
+    inset: 0;
+}
+
+.composition-chart-wrap {
+    position: relative;
+    height: 320px;
+    width: 100%;
+}
+
+.composition-chart-wrap canvas {
     position: absolute;
     inset: 0;
 }

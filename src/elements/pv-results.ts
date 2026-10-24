@@ -15,7 +15,7 @@ export class PvResults extends LightElement {
     override connectedCallback(): void {
         super.connectedCallback();
         this.observe(() => {
-            app.answers.value;
+            app.questionCount.value;
             app.vocabularyEstimate.value;
             app.vocabularyInterval.value;
             this.requestUpdate();
@@ -23,7 +23,7 @@ export class PvResults extends LightElement {
     }
 
     override render() {
-        const buckets = app.buckets.value;
+        const buckets = app.fixedBuckets.value;
         const active = app.activeVocabulary.value;
         const recognised = app.vocabularyEstimate.value;
         const recognisedCi = app.vocabularyInterval.value;
@@ -49,7 +49,7 @@ export class PvResults extends LightElement {
                     </div>
                     <div class="result-card">
                         <span class="result-label">Questions answered</span>
-                        <span class="result-value">${app.answers.value}</span>
+                        <span class="result-value">${app.questionCount.value}</span>
                         <span class="result-sub">total asked</span>
                     </div>
                 </div>

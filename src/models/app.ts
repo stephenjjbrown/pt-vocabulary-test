@@ -1,112 +1,81 @@
 /**
- * App — the root model. A singleton holding all application state, plus the
- * operations that change it.
+ * App — the root model. A singleton whose only stored state is the answer
+ * list and the session's current position; everything else is derived.
  *
- * Views read the signals directly and call methods on this object. Nothing
- * else mutates state.
+ * Storing answers rather than tallies means a single list can feed more than
+ * one bucket scheme. `fixedBuckets` and `dynamicBuckets` are the same answers
+ * counted two ways, and both recompute whenever an answer is added.
  */
 
 import { signal, computed, type Signal } from '@preact/signals-core';
 
-import { BUCKETS } from '../config.ts';
+import { BUCKETS, CONFIG, DYNAMIC_BUCKETS, type BucketDef } from '../config.ts';
 import type { Interval } from '../stats.ts';
-import { Bucket, emptyBuckets } from './bucket.ts';
+import { tally } from './aggregate.ts';
+import type { AnswerRecord } from './answer.ts';
+import type { Bucket } from './bucket.ts';
 import { ResponseType } from './response-type.ts';
 import { Word, type WordData } from './word.ts';
-
-/** One answered (or skipped) word, as shown in the history list. */
-export interface AnswerRecord {
-    word: string;
-    rank: number;
-    response: ResponseType;
-}
 
 /** Which screen is showing. */
 export type Phase = 'loading' | 'ready' | 'results';
 
-/** The word currently being asked about. */
-export interface CurrentWord {
-    bucketIdx: number;
-    word: Word;
-}
-
-/** Cap on stored history, so a long session cannot grow without bound. */
-const MAX_HISTORY = 1000;
-
 export class App {
     // ── Corpus ────────────────────────────────────────────────────────
     readonly words = signal<Word[]>([]);
-    readonly buckets = signal<Bucket[]>(emptyBuckets(BUCKETS));
 
     // ── Session ───────────────────────────────────────────────────────
-    readonly answers = signal(0);
-    readonly askedWords = signal<ReadonlySet<string>>(new Set<string>());
+    /** Every answer given, newest first. The one stored source of truth. */
     readonly history = signal<AnswerRecord[]>([]);
-    readonly currentWord = signal<CurrentWord | null>(null);
+    /** The word currently being asked about. */
+    readonly currentWord = signal<Word | null>(null);
 
     // ── Screen state ──────────────────────────────────────────────────
     readonly phase = signal<Phase>('loading');
     readonly loadError = signal<string | null>(null);
 
-    // ── Derived ───────────────────────────────────────────────────────
-    readonly questionCount = computed(() => this.answers.value);
+    // ── Derived from the answer list ──────────────────────────────────
+    /** Answers that were real, i.e. not skipped. */
+    readonly questionCount = computed(
+        () => this.history.value.reduce(
+            (n, a) => (a.response === ResponseType.Skipped ? n : n + 1),
+            0
+        )
+    );
 
-    /**
-     * Estimated vocabulary, in words, for one category: each bucket's share of
-     * that category scaled by how many words the bucket spans.
-     */
+    /** Words already shown, so none is asked twice. */
+    readonly askedWords = computed<ReadonlySet<string>>(
+        () => new Set(this.history.value.map(a => a.word))
+    );
+
+    /** The hand-picked buckets: composition chart, totals, question selection. */
+    readonly fixedBuckets = computed(() => tally(this.history.value, BUCKETS));
+
+    /** The generated buckets: the area chart. */
+    readonly dynamicBuckets = computed(
+        () => tally(this.history.value, DYNAMIC_BUCKETS)
+    );
+
+    // ── Totals, over the hand-picked buckets ──────────────────────────
     readonly vocabularyEstimate = computed((): number =>
-        this.totalWords(b => b.knownShare)
+        this.totalWords(this.fixedBuckets.value, BUCKETS, b => b.knownShare)
     );
     readonly activeVocabulary = computed((): number =>
-        this.totalWords(b => b.activeShare)
+        this.totalWords(this.fixedBuckets.value, BUCKETS, b => b.activeShare)
     );
     readonly passiveVocabulary = computed((): number =>
-        this.totalWords(b => b.passiveShare)
+        this.totalWords(this.fixedBuckets.value, BUCKETS, b => b.passiveShare)
     );
 
-    /**
-     * 95% interval on each total, in words. Each bucket's interval is scaled by
-     * its width and the bounds are summed, treating buckets as independent
-     * samples — which they are, since each is sampled separately.
-     */
     readonly vocabularyInterval = computed((): Interval =>
-        this.totalInterval(b => b.knownInterval)
+        this.totalInterval(this.fixedBuckets.value, BUCKETS, b => b.knownInterval)
     );
     readonly activeVocabularyInterval = computed((): Interval =>
-        this.totalInterval(b => b.activeInterval)
+        this.totalInterval(this.fixedBuckets.value, BUCKETS, b => b.activeInterval)
     );
     readonly passiveVocabularyInterval = computed((): Interval =>
-        this.totalInterval(b => b.passiveInterval)
+        this.totalInterval(this.fixedBuckets.value, BUCKETS, b => b.passiveInterval)
     );
-
-    /** Sum one per-bucket share, scaled by bucket width, into a word count. */
-    private totalWords(shareOf: (b: Bucket) => number): number {
-        const buckets = this.buckets.value;
-        let total = 0;
-        for (let i = 0; i < BUCKETS.length; i++) {
-            const bucket = buckets[i];
-            if (!bucket) continue;
-            total += shareOf(bucket) * BUCKETS[i]!.width;
-        }
-        return total;
-    }
-
-    /** Sum per-bucket intervals, scaled by width, into a word-count interval. */
-    private totalInterval(intervalOf: (b: Bucket) => Interval): Interval {
-        const buckets = this.buckets.value;
-        let low = 0;
-        let high = 0;
-        for (let i = 0; i < BUCKETS.length; i++) {
-            const bucket = buckets[i];
-            if (!bucket) continue;
-            const ci = intervalOf(bucket);
-            const width = BUCKETS[i]!.width;
-            low += ci.low * width;
-            high += ci.high * width;
-        }
-        return { low: Math.round(low), high: Math.round(high) };
-    }
 
     // ── Lifecycle ─────────────────────────────────────────────────────
 
@@ -126,11 +95,8 @@ export class App {
 
     /** Clear every answer and start again from the first word. */
     reset(): void {
-        this.buckets.value = emptyBuckets(BUCKETS);
-        this.answers.value = 0;
-        this.currentWord.value = null;
-        this.askedWords.value = new Set<string>();
         this.history.value = [];
+        this.currentWord.value = null;
         this.phase.value = 'ready';
         this.askNext();
     }
@@ -140,34 +106,17 @@ export class App {
     /**
      * Record an answer about the current word and advance.
      *
-     * `Skipped` leaves the tallies and the answer count alone; it only removes
-     * the word from the pool so it is not shown again.
+     * Skipped is stored like any other response — it just does not count as an
+     * answer when the buckets are tallied, and the word still leaves the pool.
      */
     answer(response: ResponseType): void {
         const current = this.currentWord.peek();
         if (!current) return;
 
-        const buckets = this.buckets.peek();
-        const bucket = buckets[current.bucketIdx];
-        if (!bucket) return;
-
-        bucket.record(response);
-
-        if (response !== ResponseType.Skipped) {
-            this.answers.value += 1;
-            this.askedWords.value = new Set(this.askedWords.peek()).add(current.word.word);
-        }
-
         this.history.value = [
-            { word: current.word.word, rank: current.word.rank, response },
+            { word: current.word, rank: current.rank, response },
             ...this.history.peek(),
-        ].slice(0, MAX_HISTORY);
-
-        // Publish fresh bucket copies: the array item mutated in place, and a
-        // signal write only notifies subscribers when the reference changes.
-        // `Object.assign` rather than spread or `structuredClone`, because both
-        // of those return a plain object and would lose the `Bucket` getters.
-        this.buckets.value = buckets.map(b => Object.assign(new Bucket(), b));
+        ];
 
         this.askNext();
     }
@@ -176,24 +125,29 @@ export class App {
 
     /** Pick the next word, or move to the results screen when none remain. */
     private askNext(): void {
-        const candidate = this.selectNextWord();
-        if (!candidate) {
+        const wordIdx = this.selectNextWord();
+        if (wordIdx === null) {
             this.phase.value = 'results';
             return;
         }
 
-        const word = this.words.peek()[candidate.wordIdx];
+        const word = this.words.peek()[wordIdx];
         if (!word) return;
 
-        this.currentWord.value = { bucketIdx: candidate.bucketIdx, word };
+        this.currentWord.value = word;
     }
 
     /**
      * Choose a bucket weighted by how uncertain we are about it (confidence
      * interval width), then an unasked word inside it.
+     *
+     * Selection works over the generated buckets, so the bands are uniform and
+     * effort is spread evenly across the rank range rather than following the
+     * hand-picked widths. Note the headline totals are still summed over the
+     * hand-picked scheme, so the two views can differ slightly.
      */
-    private selectNextWord(): { bucketIdx: number; wordIdx: number } | null {
-        const buckets = this.buckets.peek();
+    private selectNextWord(): number | null {
+        const buckets = this.dynamicBuckets.peek();
         const words = this.words.peek();
         if (buckets.length === 0 || words.length === 0) return null;
 
@@ -212,7 +166,7 @@ export class App {
             }
         }
 
-        const def = BUCKETS[bucketIdx];
+        const def = DYNAMIC_BUCKETS[bucketIdx];
         if (!def) return null;
 
         const asked = this.askedWords.peek();
@@ -225,10 +179,7 @@ export class App {
         }
 
         if (inBucket.length > 0) {
-            return {
-                bucketIdx,
-                wordIdx: inBucket[Math.floor(Math.random() * inBucket.length)]!,
-            };
+            return inBucket[Math.floor(Math.random() * inBucket.length)]!;
         }
 
         // This bucket has no unseen words left; fall back to any unseen word.
@@ -238,10 +189,43 @@ export class App {
         }
         if (anywhere.length === 0) return null;
 
-        return {
-            bucketIdx,
-            wordIdx: anywhere[Math.floor(Math.random() * anywhere.length)]!,
-        };
+        return anywhere[Math.floor(Math.random() * anywhere.length)]!;
+    }
+
+    // ── Aggregation helpers ───────────────────────────────────────────
+
+    /** Sum one per-bucket share, scaled by bucket width, into a word count. */
+    private totalWords(
+        buckets: readonly Bucket[],
+        defs: readonly BucketDef[],
+        shareOf: (b: Bucket) => number
+    ): number {
+        let total = 0;
+        for (let i = 0; i < defs.length; i++) {
+            const bucket = buckets[i];
+            if (!bucket) continue;
+            total += shareOf(bucket) * defs[i]!.width;
+        }
+        return total;
+    }
+
+    /** Sum per-bucket intervals, scaled by width, into a word-count interval. */
+    private totalInterval(
+        buckets: readonly Bucket[],
+        defs: readonly BucketDef[],
+        intervalOf: (b: Bucket) => Interval
+    ): Interval {
+        let low = 0;
+        let high = 0;
+        for (let i = 0; i < defs.length; i++) {
+            const bucket = buckets[i];
+            if (!bucket) continue;
+            const ci = intervalOf(bucket);
+            const width = defs[i]!.width;
+            low += ci.low * width;
+            high += ci.high * width;
+        }
+        return { low: Math.round(low), high: Math.round(high) };
     }
 }
 
@@ -249,4 +233,7 @@ export class App {
 export const app: App = new App();
 
 /** Re-exported for convenience so views can type signal-typed props. */
-export type { Signal };
+export type { Signal, AnswerRecord };
+
+/** The corpus size, re-exported for views that need to reason about the axis. */
+export const MAX_RANK = CONFIG.MAX_RANK;

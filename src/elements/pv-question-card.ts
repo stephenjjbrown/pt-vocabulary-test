@@ -11,7 +11,6 @@ import { customElement } from 'lit/decorators.js';
 
 import { app } from '../models/app.ts';
 import { ResponseType } from '../models/response-type.ts';
-import { BUCKETS } from '../config.ts';
 import { LightElement } from './base.ts';
 
 @customElement('pv-question-card')
@@ -25,16 +24,14 @@ export class PvQuestionCard extends LightElement {
     }
 
     override render() {
-        const current = app.currentWord.value;
-        const word = current?.word;
-        const bucketLabel = current ? BUCKETS[current.bucketIdx]?.label ?? '' : '';
+        const word = app.currentWord.value;
 
         return html`
             <div class="question-card">
                 <div class="word-display">
                     <span class="word">${word?.word ?? '—'}</span>
                     <span class="rank">
-                        ${word ? `Rank #${word.rank.toLocaleString()} · Bucket: ${bucketLabel}` : ''}
+                        ${word ? `Rank #${word.rank.toLocaleString()}` : ''}
                     </span>
                 </div>
                 <p class="question-prompt">Do you know this word?</p>

@@ -9,6 +9,7 @@ export { LightElement } from './base.ts';
 export { PvApp } from './pv-app.ts';
 export { PvStatsBar } from './pv-stats-bar.ts';
 export { PvBucketChart } from './pv-bucket-chart.ts';
+export { PvBucketComposition } from './pv-bucket-composition.ts';
 export { PvDistribution } from './pv-distribution.ts';
 export { PvQuestionCard } from './pv-question-card.ts';
 export { PvHistory } from './pv-history.ts';

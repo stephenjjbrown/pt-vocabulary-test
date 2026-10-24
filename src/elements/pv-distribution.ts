@@ -2,7 +2,7 @@
  * The total-vocabulary visualization: a horizontal range bar showing the
  * 95% credible interval, with a marker at the point estimate.
  *
- * Subscribes to `app.buckets` and redraws when it changes.
+ * Subscribes to the derived totals and redraws when they change.
  */
 
 import { html } from 'lit';

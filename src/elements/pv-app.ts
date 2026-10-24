@@ -13,6 +13,7 @@ import { LightElement } from './base.ts';
 
 import './pv-stats-bar.ts';
 import './pv-bucket-chart.ts';
+import './pv-bucket-composition.ts';
 import './pv-distribution.ts';
 import './pv-question-card.ts';
 import './pv-history.ts';
@@ -41,6 +42,7 @@ export class PvApp extends LightElement {
                     <div class="main-grid">
                         <div class="left-panel">
                             <pv-bucket-chart></pv-bucket-chart>
+                            <pv-bucket-composition></pv-bucket-composition>
                             <pv-distribution></pv-distribution>
                         </div>
                         <div class="right-panel">

@@ -1,20 +1,28 @@
 /**
- * Knowledge by frequency bucket, as an area chart.
+ * Knowledge by frequency bucket, as an area chart with linear-dodge blending.
  *
- * The y axis is the fraction of a bucket's words, the x axis the buckets in
- * frequency order.
+ * Two overlapping sets of three areas, one hue per category:
  *
- * Two overlapping sets of three areas are drawn, each filled from zero at a
- * single alpha so that overlaps deepen:
+ *   Recognised (red)   — answered active OR passive
+ *   Active (green)     — answered active only
  *
- *   Known range (yellow)   — words answered active OR passive
- *     0 → lower bound, lower → estimate, estimate → upper bound
+ * Within each set the three areas are the lower bound, the estimate and the
+ * upper bound, filled from zero, at 100%, 50% and 25% of full colour
+ * intensity — a constant ratio between steps rather than equal ones, so the
+ * shades read as a logarithmic ramp. Colours are opaque: the ramp is
+ * brightness, not opacity. The percentages live in `style.css` as
+ * `--chart-intensity-mid` and `--chart-intensity-weak`.
  *
- *   Active range (green)   — words answered active only
- *     0 → lower bound, lower → estimate, estimate → upper bound
+ * Linear dodge is addition: each area's channels are summed with whatever is
+ * already beneath it, clamping at full. Canvas spells it `lighter`. Because
+ * addition commutes, the order Chart.js draws datasets in does not affect the
+ * result.
  *
- * The active areas are drawn last, so they sit over the known ones. Since
- * active is a subset of known, the green never rises above the yellow.
+ *   red + green     → yellow   (the core, where both ranges overlap)
+ *   red + red + red → red      (the recognised-only bands)
+ *
+ * The curves are smoothed with monotone cubic interpolation, which bends
+ * between buckets without overshooting them.
  *
  * Chart.js owns the canvas, so its lifecycle is tied to the element's: create
  * it once the canvas exists, update it when the model changes, and destroy it
@@ -32,13 +40,15 @@ import {
     CategoryScale,
     Filler,
     Tooltip,
+    type Plugin,
     type ChartConfiguration,
 } from 'chart.js';
 
 import { app } from '../models/app.ts';
-import { BUCKETS } from '../config.ts';
+import { CONFIG, DYNAMIC_BUCKETS } from '../config.ts';
 import type { Bucket } from '../models/bucket.ts';
 import { LightElement } from './base.ts';
+import { readColours } from './palette.ts';
 
 Chart.register(
     LineController,
@@ -50,17 +60,74 @@ Chart.register(
     Tooltip,
 );
 
-/** Known (active or passive). */
-const YELLOW = 'rgba(245, 158, 11, 0.33)';
+/**
+ * Linear dodge — the canvas name for it is `lighter`. Each area's channels are
+ * added to what is already beneath, clamping at full. Applied to the dataset
+ * drawing only, so axes, grid and tooltips composite normally.
+ *
+ * Addition commutes, so the order Chart.js draws datasets in is irrelevant.
+ * (`plus-lighter` is the newer spelling of the same operation; `lighter` has
+ * the wider support.)
+ */
+const linearDodge: Plugin<'line'> = {
+    id: 'linear-dodge',
+    beforeDatasetsDraw(chart) {
+        chart.ctx.save();
+        chart.ctx.globalCompositeOperation = 'lighter';
+    },
+    afterDatasetsDraw(chart) {
+        chart.ctx.restore();
+    },
+};
 
-/** Active only, drawn over the known areas. */
-const GREEN = 'rgba(34, 197, 94, 0.2)';
+/** CSS custom properties holding the three shades, strongest first. */
+const KNOWN_VARS = [
+    '--chart-known-strong',
+    '--chart-known-mid',
+    '--chart-known-weak',
+] as const;
+const ACTIVE_VARS = [
+    '--chart-active-strong',
+    '--chart-active-mid',
+    '--chart-active-weak',
+] as const;
+
+/** Used if the stylesheet is missing or a variable holds something unparseable. */
+const KNOWN_FALLBACK = ['rgb(255, 0, 0)', 'rgb(128, 0, 0)', 'rgb(84, 0, 0)'] as const;
+const ACTIVE_FALLBACK = ['rgb(0, 255, 0)', 'rgb(0, 128, 0)', 'rgb(0, 84, 0)'] as const;
+
+/**
+ * Read the palette from CSS, so the stylesheet owns the colours. Only
+ * `--chart-known-colour` and `--chart-active-colour` need to be set there;
+ * the shades derive from them with `color-mix()`.
+ */
+function readPalette(): { known: string[]; active: string[] } {
+    return {
+        known: readColours(KNOWN_VARS, KNOWN_FALLBACK),
+        active: readColours(ACTIVE_VARS, ACTIVE_FALLBACK),
+    };
+}
+
+/**
+ * Buckets are plotted at their midpoint in corpus rank on a linear x axis, so
+ * equal-width buckets come out evenly spaced. Axis-edge points repeat the first
+ * and last bucket's values so the areas reach the frame rather than stopping at
+ * the outermost midpoints.
+ */
+const MIDPOINTS = DYNAMIC_BUCKETS.map(b => (b.start + b.end) / 2);
+const X_POSITIONS = [0, ...MIDPOINTS, CONFIG.MAX_RANK];
+
+/** A point on the rank axis. */
+interface Sample {
+    x: number;
+    y: number;
+}
 
 /** One category's three boundaries across all buckets. */
 interface Trio {
-    lows: number[];
-    estimates: number[];
-    highs: number[];
+    lows: Sample[];
+    estimates: Sample[];
+    highs: Sample[];
 }
 
 interface BucketSeries {
@@ -68,13 +135,42 @@ interface BucketSeries {
     active: Trio;
 }
 
-function emptyTrio(): Trio {
+interface RawTrio {
+    lows: number[];
+    estimates: number[];
+    highs: number[];
+}
+
+/** Map a bucket's values onto the axis, with edge points so the areas reach
+ *  both ends of the frame. */
+function samples(values: number[]): Sample[] {
+    const first = values[0] ?? 0;
+    const last = values[values.length - 1] ?? 0;
+
+    const points: Sample[] = [{ x: X_POSITIONS[0]!, y: first }];
+    for (let i = 0; i < values.length; i++) {
+        points.push({ x: X_POSITIONS[i + 1]!, y: values[i]! });
+    }
+    points.push({ x: X_POSITIONS[X_POSITIONS.length - 1]!, y: last });
+
+    return points;
+}
+
+function toTrio(raw: RawTrio): Trio {
+    return {
+        lows: samples(raw.lows),
+        estimates: samples(raw.estimates),
+        highs: samples(raw.highs),
+    };
+}
+
+function emptyRawTrio(): RawTrio {
     return { lows: [], estimates: [], highs: [] };
 }
 
 function buildSeries(buckets: Bucket[]): BucketSeries {
-    const known = emptyTrio();
-    const active = emptyTrio();
+    const known = emptyRawTrio();
+    const active = emptyRawTrio();
 
     for (const b of buckets) {
         known.lows.push(b.knownInterval.low);
@@ -86,11 +182,17 @@ function buildSeries(buckets: Bucket[]): BucketSeries {
         active.highs.push(b.activeInterval.high);
     }
 
-    return { known, active };
+    return { known: toTrio(known), active: toTrio(active) };
 }
 
-/** One area: a line through the series, filled down to zero. */
-function areaDataset(label: string, data: number[], colour: string) {
+/** One area: a line through the series, filled down to zero.
+ *
+ * `cubicInterpolationMode: 'monotone'` curves the line without letting it
+ * overshoot between points. Plain `tension` would be simpler but can push the
+ * curve past the neighbouring values — which here would draw a plausible range
+ * wider than the interval it represents, or dip below zero.
+ */
+function areaDataset(label: string, data: Sample[], colour: string) {
     return {
         label,
         data,
@@ -98,7 +200,7 @@ function areaDataset(label: string, data: number[], colour: string) {
         backgroundColor: colour,
         borderWidth: 0,
         pointRadius: 0,
-        tension: 0,
+        cubicInterpolationMode: 'monotone' as const,
     };
 }
 
@@ -117,7 +219,7 @@ export class PvBucketChart extends LightElement {
     override connectedCallback(): void {
         super.connectedCallback();
         this.observe(() => {
-            const series = buildSeries(app.buckets.value);
+            const series = buildSeries(app.dynamicBuckets.value);
             if (!this.chart) {
                 this.createChart(series);
             } else {
@@ -139,7 +241,7 @@ export class PvBucketChart extends LightElement {
                 <p class="buckets-legend">
                     <span class="legend-item"><span class="legend-bar known"></span> Recognised</span>
                     <span class="legend-item"><span class="legend-bar active"></span> Active</span>
-                    <span class="legend-item">Darker shading is the range we are confident about</span>
+                    <span class="legend-item">Brighter is the range we are confident about</span>
                 </p>
                 <div class="buckets-chart-wrap">
                     <canvas></canvas>
@@ -149,19 +251,18 @@ export class PvBucketChart extends LightElement {
     }
 
     protected override firstUpdated(): void {
-        if (!this.chart) this.createChart(buildSeries(app.buckets.value));
+        if (!this.chart) this.createChart(buildSeries(app.dynamicBuckets.value));
     }
 
     private applySeries(series: BucketSeries): void {
         if (!this.chart) return;
 
         const sets = this.chart.data.datasets;
-        const assign = (index: number, data: number[]): void => {
+        const assign = (index: number, data: Sample[]): void => {
             const set = sets[index];
             if (set) set.data = data;
         };
 
-        // Known first, active second — matching the draw order below.
         assign(KNOWN_HIGH, series.known.highs);
         assign(KNOWN_ESTIMATE, series.known.estimates);
         assign(KNOWN_LOW, series.known.lows);
@@ -179,19 +280,20 @@ export class PvBucketChart extends LightElement {
         // Defensive: something else may have claimed this canvas already.
         Chart.getChart(canvas)?.destroy();
 
+        const palette = readPalette();
+
         const config: ChartConfiguration<'line'> = {
             type: 'line',
+            // Inline plugin: blending applies to the dataset drawing only.
+            plugins: [linearDodge],
             data: {
-                labels: BUCKETS.map(b => b.label),
                 datasets: [
-                    // Known (yellow) first, so the active (green) areas land on
-                    // top of them.
-                    areaDataset('Known upper bound', series.known.highs, YELLOW),
-                    areaDataset('Known best estimate', series.known.estimates, YELLOW),
-                    areaDataset('Known lower bound', series.known.lows, YELLOW),
-                    areaDataset('Active upper bound', series.active.highs, GREEN),
-                    areaDataset('Active best estimate', series.active.estimates, GREEN),
-                    areaDataset('Active lower bound', series.active.lows, GREEN),
+                    areaDataset('Known upper bound', series.known.highs, palette.known[2]!),
+                    areaDataset('Known best estimate', series.known.estimates, palette.known[1]!),
+                    areaDataset('Known lower bound', series.known.lows, palette.known[0]!),
+                    areaDataset('Active upper bound', series.active.highs, palette.active[2]!),
+                    areaDataset('Active best estimate', series.active.estimates, palette.active[1]!),
+                    areaDataset('Active lower bound', series.active.lows, palette.active[0]!),
                 ],
             },
             options: {
@@ -210,7 +312,18 @@ export class PvBucketChart extends LightElement {
                         grid: { color: 'rgba(148, 163, 184, 0.1)' },
                     },
                     x: {
-                        ticks: { color: '#94a3b8' },
+                        type: 'linear' as const,
+                        min: 0,
+                        max: CONFIG.MAX_RANK,
+                        ticks: {
+                            color: '#94a3b8',
+                            maxTicksLimit: 7,
+                            callback: (v) => {
+                                const n = Number(v);
+                                if (n >= 1000) return `${Math.round(n / 1000)}K`;
+                                return String(n);
+                            },
+                        },
                         grid: { display: false },
                     },
                 },
@@ -224,8 +337,10 @@ export class PvBucketChart extends LightElement {
                                 const sets = ctx.chart.data.datasets;
                                 const i = ctx.dataIndex;
 
-                                const value = (index: number): number =>
-                                    Number(sets[index]?.data[i]);
+                                const value = (index: number): number => {
+                                    const point = sets[index]?.data[i] as Sample | undefined;
+                                    return point?.y ?? 0;
+                                };
 
                                 const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
 
